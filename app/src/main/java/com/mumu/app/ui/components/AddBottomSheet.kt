@@ -1,5 +1,6 @@
 package com.mumu.app.ui.components
 
+import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
@@ -31,7 +32,7 @@ enum class AddSheetMode {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddBottomSheet(
-    currentTab: Int, // 0=today, 1=todos, 2=reminders, 3=notes
+    currentTab: Int,
     onDismiss: () -> Unit,
     onAddTask: (Task) -> Unit,
     onAddNote: (Note) -> Unit
@@ -72,14 +73,11 @@ fun AddBottomSheet(
     ) {
         when (mode) {
             AddSheetMode.TYPE_SELECT -> TypeSelectContent(
-                defaultType = selectedType,
                 onSelectType = { type ->
                     selectedType = type
                     mode = AddSheetMode.TASK_INPUT
                 },
-                onSelectNote = {
-                    mode = AddSheetMode.NOTE_INPUT
-                }
+                onSelectNote = { mode = AddSheetMode.NOTE_INPUT }
             )
             AddSheetMode.TASK_INPUT -> TaskInputContent(
                 type = selectedType,
@@ -99,9 +97,10 @@ fun AddBottomSheet(
     }
 }
 
+// ─── Type Selector ───
+
 @Composable
 private fun TypeSelectContent(
-    defaultType: TaskType,
     onSelectType: (TaskType) -> Unit,
     onSelectNote: () -> Unit
 ) {
@@ -117,41 +116,21 @@ private fun TypeSelectContent(
             modifier = Modifier.padding(bottom = 20.dp)
         )
 
-        TypeOption(
-            emoji = "🔴",
-            label = "Urgent task",
-            subtitle = "Must do today, loud notification",
-            color = UrgentRed,
-            onClick = { onSelectType(TaskType.URGENT_PUSH) }
-        )
-        TypeOption(
-            emoji = "🔔",
-            label = "Recurring alarm",
-            subtitle = "Daily, weekly, or monthly habit",
-            color = Lavender,
-            onClick = { onSelectType(TaskType.RECURRING_ALARM) }
-        )
-        TypeOption(
-            emoji = "💭",
-            label = "Gentle reminder",
-            subtitle = "Soft nudge, silent or on-unlock",
-            color = Mint,
-            onClick = { onSelectType(TaskType.SEMI_PASSIVE) }
-        )
-        TypeOption(
-            emoji = "📋",
-            label = "Todo",
-            subtitle = "Simple checklist item",
-            color = Peach,
-            onClick = { onSelectType(TaskType.PASSIVE_TODO) }
-        )
-        TypeOption(
-            emoji = "📝",
-            label = "Note",
-            subtitle = "Capture a thought",
-            color = SoftBlue,
-            onClick = onSelectNote
-        )
+        TypeOption("🔴", "Urgent task", "Must do today, loud notification", UrgentRed) {
+            onSelectType(TaskType.URGENT_PUSH)
+        }
+        TypeOption("🔔", "Recurring alarm", "Daily, weekly, or monthly habit", Lavender) {
+            onSelectType(TaskType.RECURRING_ALARM)
+        }
+        TypeOption("💭", "Gentle reminder", "Future date, choose alert or passive", Mint) {
+            onSelectType(TaskType.SEMI_PASSIVE)
+        }
+        TypeOption("📋", "Todo", "Simple checklist item", Peach) {
+            onSelectType(TaskType.PASSIVE_TODO)
+        }
+        TypeOption("📝", "Note", "Capture a thought", SoftBlue) {
+            onSelectNote()
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
     }
@@ -176,16 +155,8 @@ private fun TypeOption(
         Text(text = emoji, style = MaterialTheme.typography.titleLarge)
         Spacer(modifier = Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.titleMedium,
-                color = OffWhite
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MutedGray
-            )
+            Text(text = label, style = MaterialTheme.typography.titleMedium, color = OffWhite)
+            Text(text = subtitle, style = MaterialTheme.typography.bodyMedium, color = MutedGray)
         }
         Box(
             modifier = Modifier
@@ -196,6 +167,8 @@ private fun TypeOption(
     }
 }
 
+// ─── Task Input ───
+
 @Composable
 private fun TaskInputContent(
     type: TaskType,
@@ -205,16 +178,41 @@ private fun TaskInputContent(
     val context = LocalContext.current
     var title by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
-    var dueTime by remember { mutableStateOf<Long?>(null) }
+
+    // Date + time state
+    var selectedDate by remember { mutableStateOf<Calendar?>(null) }
+    var selectedHour by remember { mutableIntStateOf(-1) }
+    var selectedMinute by remember { mutableIntStateOf(-1) }
+    val hasTime = selectedHour >= 0
+
+    // Compute dueTime from date + time
+    val dueTime: Long? = remember(selectedDate, selectedHour, selectedMinute) {
+        val date = selectedDate ?: return@remember null
+        if (!hasTime) return@remember null
+        Calendar.getInstance().apply {
+            set(Calendar.YEAR, date.get(Calendar.YEAR))
+            set(Calendar.MONTH, date.get(Calendar.MONTH))
+            set(Calendar.DAY_OF_MONTH, date.get(Calendar.DAY_OF_MONTH))
+            set(Calendar.HOUR_OF_DAY, selectedHour)
+            set(Calendar.MINUTE, selectedMinute)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+    }
+
+    // Recurring options
     var repeatType by remember { mutableStateOf(RepeatType.NONE) }
     var selectedDays by remember { mutableStateOf(setOf<Int>()) }
-    var monthDay by remember { mutableStateOf(1) }
+    var monthDay by remember { mutableIntStateOf(1) }
+
+    // Notification controls
+    var notifMode by remember { mutableStateOf(NotificationMode.ALERT) }
+    var isAnonymous by remember { mutableStateOf(false) }
     var isPersistent by remember { mutableStateOf(false) }
-    var isSilent by remember { mutableStateOf(false) }
     var showOnUnlock by remember { mutableStateOf(false) }
 
+    val dateFormat = remember { SimpleDateFormat("EEE, MMM d", Locale.getDefault()) }
     val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
-    val dateTimeFormat = remember { SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()) }
 
     val typeName = when (type) {
         TaskType.URGENT_PUSH -> "urgent task"
@@ -229,6 +227,9 @@ private fun TaskInputContent(
         TaskType.PASSIVE_TODO -> Peach
     }
 
+    // Whether this type supports scheduling
+    val showScheduling = type != TaskType.PASSIVE_TODO
+
     Column(
         modifier = Modifier
             .padding(horizontal = 20.dp, vertical = 16.dp)
@@ -241,16 +242,12 @@ private fun TaskInputContent(
                 Icon(Icons.Rounded.ArrowBack, contentDescription = "Back", tint = MutedGray)
             }
             Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = typeName,
-                style = MaterialTheme.typography.labelLarge,
-                color = typeColor
-            )
+            Text(text = typeName, style = MaterialTheme.typography.labelLarge, color = typeColor)
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Title input
+        // Title
         SoftTextField(
             value = title,
             onValueChange = { title = it },
@@ -260,7 +257,7 @@ private fun TaskInputContent(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Description (optional)
+        // Description
         SoftTextField(
             value = description,
             onValueChange = { description = it },
@@ -268,34 +265,68 @@ private fun TaskInputContent(
             singleLine = false
         )
 
-        Spacer(modifier = Modifier.height(16.dp))
+        // ─── Date & Time Pickers ───
+        if (showScheduling) {
+            Spacer(modifier = Modifier.height(16.dp))
 
-        // Time picker (for all types except passive todo)
-        if (type != TaskType.PASSIVE_TODO) {
+            // Date picker row
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
                     .background(CardDark)
                     .clickable {
-                        val cal = Calendar.getInstance()
+                        val now = Calendar.getInstance()
+                        DatePickerDialog(
+                            context,
+                            { _, year, month, day ->
+                                selectedDate = Calendar.getInstance().apply {
+                                    set(Calendar.YEAR, year)
+                                    set(Calendar.MONTH, month)
+                                    set(Calendar.DAY_OF_MONTH, day)
+                                }
+                            },
+                            now.get(Calendar.YEAR),
+                            now.get(Calendar.MONTH),
+                            now.get(Calendar.DAY_OF_MONTH)
+                        ).apply {
+                            datePicker.minDate = System.currentTimeMillis() - 1000
+                        }.show()
+                    }
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Rounded.CalendarToday, contentDescription = null, tint = typeColor, modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = selectedDate?.let { dateFormat.format(it.time) } ?: "Pick a date",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (selectedDate != null) OffWhite else DimGray
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Time picker row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(CardDark)
+                    .clickable {
+                        val now = Calendar.getInstance()
                         TimePickerDialog(
                             context,
                             { _, hour, minute ->
-                                val timeCal = Calendar.getInstance().apply {
-                                    set(Calendar.HOUR_OF_DAY, hour)
-                                    set(Calendar.MINUTE, minute)
-                                    set(Calendar.SECOND, 0)
-                                    set(Calendar.MILLISECOND, 0)
+                                selectedHour = hour
+                                selectedMinute = minute
+                                // Auto-set date to today if not picked yet
+                                if (selectedDate == null) {
+                                    selectedDate = Calendar.getInstance()
                                 }
-                                // If time has passed today, set for tomorrow (for non-recurring)
-                                if (timeCal.timeInMillis <= System.currentTimeMillis() && type == TaskType.URGENT_PUSH) {
-                                    timeCal.add(Calendar.DAY_OF_YEAR, 1)
-                                }
-                                dueTime = timeCal.timeInMillis
                             },
-                            cal.get(Calendar.HOUR_OF_DAY),
-                            cal.get(Calendar.MINUTE),
+                            now.get(Calendar.HOUR_OF_DAY),
+                            now.get(Calendar.MINUTE),
                             false
                         ).show()
                     }
@@ -305,17 +336,70 @@ private fun TaskInputContent(
                 Icon(Icons.Rounded.Schedule, contentDescription = null, tint = typeColor, modifier = Modifier.size(20.dp))
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
-                    text = dueTime?.let { timeFormat.format(Date(it)) } ?: "Set time",
+                    text = if (hasTime) {
+                        val cal = Calendar.getInstance().apply {
+                            set(Calendar.HOUR_OF_DAY, selectedHour)
+                            set(Calendar.MINUTE, selectedMinute)
+                        }
+                        timeFormat.format(cal.time)
+                    } else "Set time",
                     style = MaterialTheme.typography.bodyLarge,
-                    color = if (dueTime != null) OffWhite else DimGray
+                    color = if (hasTime) OffWhite else DimGray
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // ─── Notification Mode (for all scheduled types) ───
+            Text(
+                text = "NOTIFICATION STYLE",
+                style = MaterialTheme.typography.labelLarge,
+                color = MutedGray,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                NotifModeChip(
+                    label = "Alert",
+                    emoji = "🔔",
+                    selected = notifMode == NotificationMode.ALERT,
+                    color = typeColor
+                ) { notifMode = NotificationMode.ALERT }
+
+                NotifModeChip(
+                    label = "Passive",
+                    emoji = "💤",
+                    selected = notifMode == NotificationMode.PASSIVE,
+                    color = typeColor
+                ) { notifMode = NotificationMode.PASSIVE }
+            }
+
+            // Passive explanation
+            if (notifMode == NotificationMode.PASSIVE) {
+                Text(
+                    text = "Shows silently when you open your phone around the set time",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MutedGray,
+                    modifier = Modifier.padding(top = 6.dp, start = 4.dp)
                 )
             }
 
             Spacer(modifier = Modifier.height(12.dp))
+
+            // ─── Anonymous toggle ───
+            ToggleRow(
+                label = "Anonymous notification",
+                subtitle = "Hides content — says \"something pending\"",
+                checked = isAnonymous,
+                onCheckedChange = { isAnonymous = it },
+                color = typeColor
+            )
         }
 
-        // Repeat options (for recurring alarms)
+        // ─── Type-specific extras ───
+
+        // Recurring alarm: repeat options
         if (type == TaskType.RECURRING_ALARM) {
+            Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = "REPEAT",
                 style = MaterialTheme.typography.labelLarge,
@@ -344,7 +428,6 @@ private fun TaskInputContent(
                 }
             }
 
-            // Weekly day selector
             if (repeatType == RepeatType.WEEKLY) {
                 Spacer(modifier = Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -369,76 +452,35 @@ private fun TaskInputContent(
                     }
                 }
             }
-
-            Spacer(modifier = Modifier.height(12.dp))
         }
 
-        // Type B extras
+        // Urgent: persistent toggle
         if (type == TaskType.URGENT_PUSH) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Persistent notification",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = OffWhite,
-                    modifier = Modifier.weight(1f)
-                )
-                Switch(
-                    checked = isPersistent,
-                    onCheckedChange = { isPersistent = it },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = UrgentRed,
-                        checkedTrackColor = UrgentRed.copy(alpha = 0.3f),
-                        uncheckedThumbColor = MutedGray,
-                        uncheckedTrackColor = CardDark
-                    )
-                )
-            }
+            Spacer(modifier = Modifier.height(8.dp))
+            ToggleRow(
+                label = "Persistent notification",
+                subtitle = "Can't swipe away until marked done",
+                checked = isPersistent,
+                onCheckedChange = { isPersistent = it },
+                color = UrgentRed
+            )
         }
 
-        // Type D extras
-        if (type == TaskType.SEMI_PASSIVE) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Silent notification", style = MaterialTheme.typography.bodyLarge, color = OffWhite, modifier = Modifier.weight(1f))
-                Switch(
-                    checked = isSilent,
-                    onCheckedChange = { isSilent = it },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Mint,
-                        checkedTrackColor = Mint.copy(alpha = 0.3f),
-                        uncheckedThumbColor = MutedGray,
-                        uncheckedTrackColor = CardDark
-                    )
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Show on unlock only", style = MaterialTheme.typography.bodyLarge, color = OffWhite, modifier = Modifier.weight(1f))
-                Switch(
-                    checked = showOnUnlock,
-                    onCheckedChange = { showOnUnlock = it },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Mint,
-                        checkedTrackColor = Mint.copy(alpha = 0.3f),
-                        uncheckedThumbColor = MutedGray,
-                        uncheckedTrackColor = CardDark
-                    )
-                )
-            }
+        // Semi-passive: on-unlock toggle
+        if (type == TaskType.SEMI_PASSIVE && notifMode == NotificationMode.PASSIVE) {
+            Spacer(modifier = Modifier.height(4.dp))
+            ToggleRow(
+                label = "Show on unlock only",
+                subtitle = "Appears when you open your phone",
+                checked = showOnUnlock,
+                onCheckedChange = { showOnUnlock = it },
+                color = Mint
+            )
         }
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Save button
+        // ─── Save Button ───
         Button(
             onClick = {
                 if (title.isNotBlank()) {
@@ -453,8 +495,10 @@ private fun TaskInputContent(
                             daysOfWeek = selectedDays.sorted().joinToString(","),
                             monthDay = monthDay,
                             isPersistentNotification = isPersistent,
-                            isSilent = isSilent,
-                            showOnUnlockOnly = showOnUnlock
+                            isSilent = notifMode == NotificationMode.PASSIVE,
+                            showOnUnlockOnly = showOnUnlock,
+                            notificationMode = notifMode,
+                            isAnonymous = isAnonymous
                         )
                     )
                 }
@@ -471,16 +515,86 @@ private fun TaskInputContent(
                 disabledContentColor = MutedGray
             )
         ) {
-            Text(
-                text = "Save",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
+            Text("Save", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         }
 
         Spacer(modifier = Modifier.height(16.dp))
     }
 }
+
+// ─── Notification Mode Chip ───
+
+@Composable
+private fun NotifModeChip(
+    label: String,
+    emoji: String,
+    selected: Boolean,
+    color: androidx.compose.ui.graphics.Color,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable { onClick() },
+        shape = RoundedCornerShape(12.dp),
+        color = if (selected) color.copy(alpha = 0.2f) else CardDark
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(text = emoji, style = MaterialTheme.typography.bodyLarge)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                color = if (selected) color else MutedGray
+            )
+        }
+    }
+}
+
+// ─── Toggle Row (reusable) ───
+
+@Composable
+private fun ToggleRow(
+    label: String,
+    subtitle: String? = null,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    color: androidx.compose.ui.graphics.Color
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = label, style = MaterialTheme.typography.bodyLarge, color = OffWhite)
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MutedGray,
+                    modifier = Modifier.padding(top = 1.dp)
+                )
+            }
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = color,
+                checkedTrackColor = color.copy(alpha = 0.3f),
+                uncheckedThumbColor = MutedGray,
+                uncheckedTrackColor = CardDark
+            )
+        )
+    }
+}
+
+// ─── Note Input ───
 
 @Composable
 private fun NoteInputContent(onSave: (Note) -> Unit) {
@@ -518,7 +632,6 @@ private fun NoteInputContent(onSave: (Note) -> Unit) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Color picker
         Text(
             text = "COLOR",
             style = MaterialTheme.typography.labelLarge,
@@ -556,7 +669,9 @@ private fun NoteInputContent(onSave: (Note) -> Unit) {
                 }
             },
             enabled = title.isNotBlank(),
-            modifier = Modifier.fillMaxWidth().height(52.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp),
             shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = PastelColors[selectedColor],

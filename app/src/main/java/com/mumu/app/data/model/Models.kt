@@ -14,6 +14,11 @@ enum class RepeatType {
     DAILY, WEEKLY, MONTHLY, NONE
 }
 
+enum class NotificationMode {
+    ALERT,      // Normal chime + heads-up
+    PASSIVE     // Silent, shows on unlock around the time
+}
+
 @Entity(tableName = "tasks")
 data class Task(
     @PrimaryKey
@@ -22,21 +27,24 @@ data class Task(
     val description: String = "",
     val type: TaskType,
     val timestamp: Long = System.currentTimeMillis(),
-    val dueTime: Long? = null, // epoch millis for when reminder fires
+    val dueTime: Long? = null,
     val completed: Boolean = false,
-    val priority: Int = 0, // 0=normal, 1=high, 2=urgent
-    val tags: String = "", // comma separated
+    val priority: Int = 0,
+    val tags: String = "",
     val sortOrder: Int = 0,
     // Type A specifics
     val repeatType: RepeatType = RepeatType.NONE,
-    val daysOfWeek: String = "", // comma-separated 1-7 for weekly
-    val monthDay: Int = 0, // for monthly
+    val daysOfWeek: String = "",
+    val monthDay: Int = 0,
     // Type B specifics
     val isPersistentNotification: Boolean = false,
-    val repeatIntervalMinutes: Int = 0, // 0 = no repeat
+    val repeatIntervalMinutes: Int = 0,
     // Type D specifics
     val isSilent: Boolean = false,
     val showOnUnlockOnly: Boolean = false,
+    // Notification control
+    val notificationMode: NotificationMode = NotificationMode.ALERT,
+    val isAnonymous: Boolean = false, // "Something pending" instead of title
     // Snooze
     val snoozeDurationMinutes: Int = 5,
     val enableVibration: Boolean = true,
@@ -51,10 +59,13 @@ data class Note(
     val title: String,
     val content: String = "",
     val isLocked: Boolean = false,
-    val pinHash: String? = null, // hashed PIN
+    val pinHash: String? = null,
+    val backupQuestion: String? = null,
+    val backupAnswerHash: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
-    val color: Int = 0 // index into pastel palette
+    val color: Int = 0,
+    val imagePaths: String = "" // comma-separated local file paths
 )
 
 @Entity(

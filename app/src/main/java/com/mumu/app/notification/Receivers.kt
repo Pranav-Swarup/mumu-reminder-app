@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.mumu.app.data.db.MuMuDatabase
+import com.mumu.app.data.model.NotificationMode
 import com.mumu.app.data.model.TaskType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -16,19 +17,31 @@ class AlarmReceiver : BroadcastReceiver() {
         val title = intent.getStringExtra("task_title") ?: "Reminder"
         val type = intent.getStringExtra("task_type") ?: ""
         val isPersistent = intent.getBooleanExtra("is_persistent", false)
+        val isAnonymous = intent.getBooleanExtra("is_anonymous", false)
+        val notifMode = intent.getStringExtra("notif_mode") ?: NotificationMode.ALERT.name
         val notifId = abs(taskId.hashCode()) % 100000
+
+        // If passive mode, use silent channel regardless of type
+        val usePassive = notifMode == NotificationMode.PASSIVE.name
 
         when (type) {
             TaskType.RECURRING_ALARM.name -> {
-                NotificationHelper.showAlarmNotification(context, taskId, title, notifId)
-                // Reschedule for next occurrence
+                if (usePassive) {
+                    NotificationHelper.showSilentNotification(context, taskId, title, notifId, isAnonymous)
+                } else {
+                    NotificationHelper.showAlarmNotification(context, taskId, title, notifId, isAnonymous)
+                }
                 rescheduleRecurring(context, taskId)
             }
             TaskType.URGENT_PUSH.name -> {
-                NotificationHelper.showUrgentNotification(context, taskId, title, isPersistent, notifId)
+                if (usePassive) {
+                    NotificationHelper.showSilentNotification(context, taskId, title, notifId, isAnonymous)
+                } else {
+                    NotificationHelper.showUrgentNotification(context, taskId, title, isPersistent, notifId, isAnonymous)
+                }
             }
             TaskType.SEMI_PASSIVE.name -> {
-                NotificationHelper.showSilentNotification(context, taskId, title, notifId)
+                NotificationHelper.showSilentNotification(context, taskId, title, notifId, isAnonymous)
             }
         }
     }
@@ -50,15 +63,11 @@ class AlarmReceiver : BroadcastReceiver() {
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
-
         NotificationHelper.createChannels(context)
-
         CoroutineScope(Dispatchers.IO).launch {
             val db = MuMuDatabase.getDatabase(context)
             val tasks = db.taskDao().getScheduledTasks()
-            tasks.forEach { task ->
-                AlarmScheduler.schedule(context, task)
-            }
+            tasks.forEach { task -> AlarmScheduler.schedule(context, task) }
         }
     }
 }
@@ -66,19 +75,19 @@ class BootReceiver : BroadcastReceiver() {
 class ScreenUnlockReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_USER_PRESENT) return
-
         CoroutineScope(Dispatchers.IO).launch {
             val db = MuMuDatabase.getDatabase(context)
             val tasks = db.taskDao().getScheduledTasks()
             val now = System.currentTimeMillis()
             tasks.filter { task ->
-                task.type == TaskType.SEMI_PASSIVE &&
-                task.showOnUnlockOnly &&
                 !task.completed &&
+                (task.showOnUnlockOnly || task.notificationMode == NotificationMode.PASSIVE) &&
                 (task.dueTime == null || task.dueTime <= now)
             }.forEach { task ->
                 val notifId = abs(task.id.hashCode()) % 100000
-                NotificationHelper.showSilentNotification(context, task.id, task.title, notifId)
+                NotificationHelper.showSilentNotification(
+                    context, task.id, task.title, notifId, task.isAnonymous
+                )
             }
         }
     }

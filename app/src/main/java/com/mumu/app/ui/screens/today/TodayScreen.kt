@@ -1,6 +1,5 @@
 package com.mumu.app.ui.screens.today
 
-import androidx.compose.animation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,7 +17,8 @@ import java.util.*
 @Composable
 fun TodayScreen(
     tasks: List<Task>,
-    onToggleComplete: (Task) -> Unit,
+    onSwipeComplete: (Task) -> Unit,
+    onSwipeDelete: (Task) -> Unit,
     onTaskClick: (Task) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -33,7 +33,6 @@ fun TodayScreen(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 100.dp)
     ) {
-        // Header
         item {
             Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
                 Text(
@@ -50,22 +49,19 @@ fun TodayScreen(
             }
         }
 
-        // Must Do section
         if (mustDo.isNotEmpty()) {
-            item {
-                SectionHeader(title = "must do", color = UrgentRed)
-            }
+            item { SectionHeader(title = "must do", color = UrgentRed) }
             items(mustDo, key = { it.id }) { task ->
-                TaskCard(
+                SwipeableTaskCard(
                     task = task,
-                    onChecked = { onToggleComplete(task) },
-                    onClick = { onTaskClick(task) },
+                    onComplete = onSwipeComplete,
+                    onDelete = onSwipeDelete,
+                    onClick = onTaskClick,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                 )
             }
         }
 
-        // Later Today section
         if (laterToday.isNotEmpty()) {
             item {
                 SectionHeader(
@@ -75,16 +71,16 @@ fun TodayScreen(
                 )
             }
             items(laterToday, key = { it.id }) { task ->
-                TaskCard(
+                SwipeableTaskCard(
                     task = task,
-                    onChecked = { onToggleComplete(task) },
-                    onClick = { onTaskClick(task) },
+                    onComplete = onSwipeComplete,
+                    onDelete = onSwipeDelete,
+                    onClick = onTaskClick,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                 )
             }
         }
 
-        // Completed
         if (completed.isNotEmpty()) {
             item {
                 SectionHeader(
@@ -94,22 +90,19 @@ fun TodayScreen(
                 )
             }
             items(completed, key = { it.id }) { task ->
-                TaskCard(
+                SwipeableTaskCard(
                     task = task,
-                    onChecked = { onToggleComplete(task) },
-                    onClick = { onTaskClick(task) },
+                    onComplete = onSwipeComplete,
+                    onDelete = onSwipeDelete,
+                    onClick = onTaskClick,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                 )
             }
         }
 
-        // Empty state
         if (tasks.isEmpty()) {
             item {
-                EmptyState(
-                    emoji = "🌸",
-                    message = "Nothing for today — enjoy the calm"
-                )
+                EmptyState(emoji = "🌸", message = "Nothing for today — enjoy the calm")
             }
         }
     }

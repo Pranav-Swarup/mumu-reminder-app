@@ -10,7 +10,7 @@ import com.mumu.app.data.model.Task
 
 @Database(
     entities = [Task::class, Note::class, Media::class],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class MuMuDatabase : RoomDatabase() {
@@ -28,7 +28,9 @@ abstract class MuMuDatabase : RoomDatabase() {
                     context.applicationContext,
                     MuMuDatabase::class.java,
                     "mumu_database"
-                ).build()
+                )
+                    .fallbackToDestructiveMigration()
+                    .build()
                 INSTANCE = instance
                 instance
             }

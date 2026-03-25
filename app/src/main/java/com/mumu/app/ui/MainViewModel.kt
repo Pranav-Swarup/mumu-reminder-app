@@ -12,10 +12,19 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
+data class UndoAction(
+    val message: String,
+    val undo: suspend () -> Unit
+)
+
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val db = MuMuDatabase.getDatabase(application)
     private val taskRepo = TaskRepository(db)
     private val noteRepo = NoteRepository(db)
+
+    // Undo events — consumed by UI to show snackbar
+    private val _undoEvent = MutableSharedFlow<UndoAction>(extraBufferCapacity = 1)
+    val undoEvent: SharedFlow<UndoAction> = _undoEvent
 
     // Day boundaries for "today" queries
     private val todayStart: Long
@@ -90,11 +99,45 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleComplete(task: Task) {
         viewModelScope.launch {
-            taskRepo.setCompleted(task.id, !task.completed)
-            if (!task.completed) {
-                // Being marked complete — cancel alarm
+            val newState = !task.completed
+            taskRepo.setCompleted(task.id, newState)
+            if (newState) {
                 AlarmScheduler.cancel(getApplication(), task)
             }
+        }
+    }
+
+    /** Swipe-to-complete with undo */
+    fun swipeComplete(task: Task) {
+        viewModelScope.launch {
+            taskRepo.setCompleted(task.id, true)
+            AlarmScheduler.cancel(getApplication(), task)
+            _undoEvent.emit(UndoAction(
+                message = "\"${task.title}\" completed",
+                undo = {
+                    taskRepo.setCompleted(task.id, false)
+                    if (task.type != TaskType.PASSIVE_TODO) {
+                        AlarmScheduler.schedule(getApplication(), task)
+                    }
+                }
+            ))
+        }
+    }
+
+    /** Swipe-to-delete with undo */
+    fun swipeDelete(task: Task) {
+        viewModelScope.launch {
+            AlarmScheduler.cancel(getApplication(), task)
+            taskRepo.delete(task)
+            _undoEvent.emit(UndoAction(
+                message = "\"${task.title}\" deleted",
+                undo = {
+                    taskRepo.insert(task)
+                    if (task.type != TaskType.PASSIVE_TODO && !task.completed) {
+                        AlarmScheduler.schedule(getApplication(), task)
+                    }
+                }
+            ))
         }
     }
 
@@ -116,7 +159,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteNote(note: Note) {
-        viewModelScope.launch { noteRepo.delete(note) }
+        viewModelScope.launch {
+            noteRepo.delete(note)
+            _undoEvent.emit(UndoAction(
+                message = "Note deleted",
+                undo = { noteRepo.insert(note) }
+            ))
+        }
     }
 
     fun reorderTodos(from: Int, to: Int) {

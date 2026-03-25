@@ -4,6 +4,7 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import com.mumu.app.data.model.NotificationMode
 import com.mumu.app.data.model.RepeatType
 import com.mumu.app.data.model.Task
 import com.mumu.app.data.model.TaskType
@@ -16,7 +17,7 @@ object AlarmScheduler {
             TaskType.RECURRING_ALARM -> scheduleRecurring(context, task)
             TaskType.URGENT_PUSH -> scheduleExact(context, task)
             TaskType.SEMI_PASSIVE -> scheduleSemiPassive(context, task)
-            else -> {} // Passive todos don't get scheduled
+            else -> {}
         }
     }
 
@@ -35,18 +36,9 @@ object AlarmScheduler {
         val intent = createAlarmIntent(context, task)
 
         try {
-            alarmManager.setExactAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP,
-                dueTime,
-                intent
-            )
+            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, dueTime, intent)
         } catch (e: SecurityException) {
-            // Fallback for devices that don't allow exact alarms
-            alarmManager.setAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP,
-                dueTime,
-                intent
-            )
+            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, dueTime, intent)
         }
     }
 
@@ -55,37 +47,29 @@ object AlarmScheduler {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val intent = createAlarmIntent(context, task)
 
-        // Calculate the next trigger time
         var triggerTime = dueTime
         val now = System.currentTimeMillis()
-
         if (triggerTime <= now) {
             triggerTime = calculateNextOccurrence(task, now)
         }
-
         if (triggerTime <= now) return
 
         try {
-            alarmManager.setExactAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP,
-                triggerTime,
-                intent
-            )
+            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, intent)
         } catch (e: SecurityException) {
-            alarmManager.setAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP,
-                triggerTime,
-                intent
-            )
+            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, intent)
         }
     }
 
     private fun scheduleSemiPassive(context: Context, task: Task) {
-        if (task.showOnUnlockOnly) {
-            // Handled by ScreenUnlockReceiver, no alarm needed
+        if (task.showOnUnlockOnly || task.notificationMode == NotificationMode.PASSIVE) {
+            // For passive mode with a future date, we still schedule an alarm
+            // but the receiver will show it silently
+            if (task.dueTime != null && task.dueTime > System.currentTimeMillis()) {
+                scheduleExact(context, task)
+            }
             return
         }
-        // Silent notification at scheduled time
         scheduleExact(context, task)
     }
 
@@ -93,8 +77,6 @@ object AlarmScheduler {
         val cal = Calendar.getInstance().apply { timeInMillis = task.dueTime ?: fromTime }
         val hour = cal.get(Calendar.HOUR_OF_DAY)
         val minute = cal.get(Calendar.MINUTE)
-
-        val now = Calendar.getInstance().apply { timeInMillis = fromTime }
 
         return when (task.repeatType) {
             RepeatType.DAILY -> {
@@ -105,15 +87,12 @@ object AlarmScheduler {
                     set(Calendar.SECOND, 0)
                     set(Calendar.MILLISECOND, 0)
                 }
-                if (next.timeInMillis <= fromTime) {
-                    next.add(Calendar.DAY_OF_YEAR, 1)
-                }
+                if (next.timeInMillis <= fromTime) next.add(Calendar.DAY_OF_YEAR, 1)
                 next.timeInMillis
             }
             RepeatType.WEEKLY -> {
                 val days = task.daysOfWeek.split(",").mapNotNull { it.trim().toIntOrNull() }
                 if (days.isEmpty()) return fromTime
-
                 val next = Calendar.getInstance().apply {
                     timeInMillis = fromTime
                     set(Calendar.HOUR_OF_DAY, hour)
@@ -121,13 +100,9 @@ object AlarmScheduler {
                     set(Calendar.SECOND, 0)
                     set(Calendar.MILLISECOND, 0)
                 }
-
-                // Find next matching day
                 for (i in 0..7) {
                     val dayOfWeek = next.get(Calendar.DAY_OF_WEEK)
-                    if (dayOfWeek in days && next.timeInMillis > fromTime) {
-                        return next.timeInMillis
-                    }
+                    if (dayOfWeek in days && next.timeInMillis > fromTime) return next.timeInMillis
                     next.add(Calendar.DAY_OF_YEAR, 1)
                 }
                 next.timeInMillis
@@ -141,9 +116,7 @@ object AlarmScheduler {
                     set(Calendar.SECOND, 0)
                     set(Calendar.MILLISECOND, 0)
                 }
-                if (next.timeInMillis <= fromTime) {
-                    next.add(Calendar.MONTH, 1)
-                }
+                if (next.timeInMillis <= fromTime) next.add(Calendar.MONTH, 1)
                 next.timeInMillis
             }
             RepeatType.NONE -> fromTime
@@ -156,6 +129,8 @@ object AlarmScheduler {
             putExtra("task_title", task.title)
             putExtra("task_type", task.type.name)
             putExtra("is_persistent", task.isPersistentNotification)
+            putExtra("is_anonymous", task.isAnonymous)
+            putExtra("notif_mode", task.notificationMode.name)
         }
         return PendingIntent.getBroadcast(
             context,

@@ -1,6 +1,5 @@
 package com.mumu.app.ui.screens.todos
 
-import androidx.compose.animation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -15,7 +14,8 @@ import com.mumu.app.ui.theme.*
 @Composable
 fun TodosScreen(
     todos: List<Task>,
-    onToggleComplete: (Task) -> Unit,
+    onSwipeComplete: (Task) -> Unit,
+    onSwipeDelete: (Task) -> Unit,
     onTaskClick: (Task) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -26,7 +26,6 @@ fun TodosScreen(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 100.dp)
     ) {
-        // Header
         item {
             Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
                 Text(
@@ -45,19 +44,18 @@ fun TodosScreen(
             }
         }
 
-        // Active todos
         if (active.isNotEmpty()) {
             itemsIndexed(active, key = { _, task -> task.id }) { _, task ->
-                TaskCard(
+                SwipeableTaskCard(
                     task = task,
-                    onChecked = { onToggleComplete(task) },
-                    onClick = { onTaskClick(task) },
+                    onComplete = onSwipeComplete,
+                    onDelete = onSwipeDelete,
+                    onClick = onTaskClick,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                 )
             }
         }
 
-        // Done
         if (done.isNotEmpty()) {
             item {
                 SectionHeader(
@@ -67,22 +65,19 @@ fun TodosScreen(
                 )
             }
             itemsIndexed(done, key = { _, task -> task.id }) { _, task ->
-                TaskCard(
+                SwipeableTaskCard(
                     task = task,
-                    onChecked = { onToggleComplete(task) },
-                    onClick = { onTaskClick(task) },
+                    onComplete = onSwipeComplete,
+                    onDelete = onSwipeDelete,
+                    onClick = onTaskClick,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                 )
             }
         }
 
-        // Empty
         if (todos.isEmpty()) {
             item {
-                EmptyState(
-                    emoji = "✨",
-                    message = "Add todos to keep track of things"
-                )
+                EmptyState(emoji = "✨", message = "Add todos to keep track of things")
             }
         }
     }

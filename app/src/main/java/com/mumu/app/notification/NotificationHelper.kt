@@ -5,7 +5,6 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.mumu.app.MainActivity
 import com.mumu.app.R
@@ -47,8 +46,13 @@ object NotificationHelper {
         manager.createNotificationChannels(listOf(alarm, urgent, silent))
     }
 
-    fun showAlarmNotification(context: Context, taskId: String, title: String, notifId: Int) {
+    fun showAlarmNotification(
+        context: Context, taskId: String, title: String,
+        notifId: Int, isAnonymous: Boolean = false
+    ) {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val displayTitle = if (isAnonymous) "Hey, something's pending" else title
+        val displayBody = if (isAnonymous) "Open the app to see what it is" else "Time for your reminder"
 
         val openIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -78,22 +82,29 @@ object NotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val notif = NotificationCompat.Builder(context, CHANNEL_ALARM)
+        val builder = NotificationCompat.Builder(context, CHANNEL_ALARM)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("⏰ $title")
-            .setContentText("Time for your reminder")
+            .setContentTitle(displayTitle)
+            .setContentText(displayBody)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(openPending)
             .setAutoCancel(true)
-            .addAction(R.drawable.ic_notification, "Done ✓", donePending)
-            .addAction(R.drawable.ic_notification, "Snooze", snoozePending)
-            .build()
 
-        manager.notify(notifId, notif)
+        if (!isAnonymous) {
+            builder.addAction(R.drawable.ic_notification, "Done", donePending)
+            builder.addAction(R.drawable.ic_notification, "Snooze", snoozePending)
+        }
+
+        manager.notify(notifId, builder.build())
     }
 
-    fun showUrgentNotification(context: Context, taskId: String, title: String, persistent: Boolean, notifId: Int) {
+    fun showUrgentNotification(
+        context: Context, taskId: String, title: String,
+        persistent: Boolean, notifId: Int, isAnonymous: Boolean = false
+    ) {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val displayTitle = if (isAnonymous) "Something urgent pending" else title
+        val displayBody = if (isAnonymous) "Open the app to check" else "Urgent — must do today!"
 
         val doneIntent = Intent(context, ActionReceiver::class.java).apply {
             action = "MARK_DONE"
@@ -105,21 +116,28 @@ object NotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val notif = NotificationCompat.Builder(context, CHANNEL_URGENT)
+        val builder = NotificationCompat.Builder(context, CHANNEL_URGENT)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("🔴 $title")
-            .setContentText("Urgent — must do today!")
+            .setContentTitle(displayTitle)
+            .setContentText(displayBody)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setOngoing(persistent)
-            .addAction(R.drawable.ic_notification, "Mark Done ✓", donePending)
-            .build()
 
-        manager.notify(notifId, notif)
+        if (!isAnonymous) {
+            builder.addAction(R.drawable.ic_notification, "Mark Done", donePending)
+        }
+
+        manager.notify(notifId, builder.build())
     }
 
-    fun showSilentNotification(context: Context, taskId: String, title: String, notifId: Int) {
+    fun showSilentNotification(
+        context: Context, taskId: String, title: String,
+        notifId: Int, isAnonymous: Boolean = false
+    ) {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val displayTitle = if (isAnonymous) "A gentle nudge" else title
+        val displayBody = if (isAnonymous) "Open the app to see" else "A gentle reminder"
 
         val openIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -131,8 +149,8 @@ object NotificationHelper {
 
         val notif = NotificationCompat.Builder(context, CHANNEL_SILENT)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("💭 $title")
-            .setContentText("A gentle reminder")
+            .setContentTitle(displayTitle)
+            .setContentText(displayBody)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setContentIntent(openPending)
             .setAutoCancel(true)

@@ -7,8 +7,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.*
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -19,7 +17,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -32,6 +29,7 @@ import com.mumu.app.ui.screens.reminders.RemindersScreen
 import com.mumu.app.ui.screens.today.TodayScreen
 import com.mumu.app.ui.screens.todos.TodosScreen
 import com.mumu.app.ui.theme.*
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -43,7 +41,6 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
-        // Request notification permission on Android 13+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED
@@ -71,8 +68,37 @@ fun MuMuApp(vm: MainViewModel = viewModel()) {
     val notes by vm.notes.collectAsState()
     val searchQuery by vm.searchQuery.collectAsState()
 
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
+    // Listen for undo events
+    LaunchedEffect(Unit) {
+        vm.undoEvent.collect { action ->
+            val result = snackbarHostState.showSnackbar(
+                message = action.message,
+                actionLabel = "Undo",
+                duration = SnackbarDuration.Short
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                action.undo()
+            }
+        }
+    }
+
     Scaffold(
         containerColor = SoftBlack,
+        snackbarHost = {
+            SnackbarHost(snackbarHostState) { data ->
+                Snackbar(
+                    snackbarData = data,
+                    containerColor = CardDark,
+                    contentColor = OffWhite,
+                    actionColor = Lavender,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+            }
+        },
         bottomBar = {
             MuMuBottomBar(
                 currentTab = currentTab,
@@ -110,17 +136,20 @@ fun MuMuApp(vm: MainViewModel = viewModel()) {
             when (currentTab) {
                 0 -> TodayScreen(
                     tasks = todayTasks,
-                    onToggleComplete = { vm.toggleComplete(it) },
+                    onSwipeComplete = { vm.swipeComplete(it) },
+                    onSwipeDelete = { vm.swipeDelete(it) },
                     onTaskClick = { /* TODO: edit sheet */ }
                 )
                 1 -> TodosScreen(
                     todos = todos,
-                    onToggleComplete = { vm.toggleComplete(it) },
+                    onSwipeComplete = { vm.swipeComplete(it) },
+                    onSwipeDelete = { vm.swipeDelete(it) },
                     onTaskClick = { /* TODO: edit sheet */ }
                 )
                 2 -> RemindersScreen(
                     reminders = reminders,
-                    onToggleComplete = { vm.toggleComplete(it) },
+                    onSwipeComplete = { vm.swipeComplete(it) },
+                    onSwipeDelete = { vm.swipeDelete(it) },
                     onTaskClick = { /* TODO: edit sheet */ }
                 )
                 3 -> NotesScreen(
@@ -158,8 +187,7 @@ fun MuMuBottomBar(
     NavigationBar(
         containerColor = SurfaceDark,
         tonalElevation = 0.dp,
-        modifier = Modifier
-            .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+        modifier = Modifier.clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
     ) {
         items.forEachIndexed { index, item ->
             val isSelected = currentTab == index
